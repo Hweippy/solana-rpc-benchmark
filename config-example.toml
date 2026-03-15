@@ -1,0 +1,51 @@
+# RPC Benchmark Configuration Example
+
+# List of Nonce account pubkeys to use for benchmarking.
+# These accounts must be initialized and funded.
+# Nonces are used to ensure transactions are built to fail (duplicate nonce) 
+# and for tracking landing rates without consuming funds (except for fees).
+nonces = ["..."]
+
+[benchmark]
+# The RPC URL used for fetching quotes, ALTs, and checking signature statuses.
+rpc_url = "http://..."
+
+# Path to the JSON keypair file for the payer.
+payer_keypair_path = "/path/to/your/keypair.json"
+
+# Number of transaction rounds to send per benchmark.
+tx_count = 10
+
+# Delay in milliseconds between each transaction round.
+delay_ms = 1000
+
+# Compute Unit (CU) price in micro-lamports.
+cu_price = 1000
+
+# [Optional] Tip amount in lamports. 
+# If provided, a transfer instruction to a randomized tip address will be added.
+# tip = 100000 
+
+# [Optional] Jupiter API base URL.
+# Defaults to "https://lite-api.jup.ag/swap/v1" if not specified.
+# jupiter_url = "https://your-custom-jup-api.com"
+
+[[senders]]
+# Identifying name for this sender/endpoint.
+name = "my-rpc-node"
+
+# List of RPC URLs to send the transaction to simultaneously.
+urls = ["https://your-rpc-endpoint.com/"]
+
+# [Optional] List of tip addresses for this sender.
+# If provided, and `benchmark.tip` is set, one address will be chosen at random.
+# tip_addresses = [
+#     "ADuXUsS75AJ7G7ZET9Jst7P6tup6C2J6R1TjR6pBjsFj",
+# ]
+
+# [Optional] API Key for authentication.
+# api_key = "your-api-key"
+
+# [Optional] Custom Header name for API Key authentication.
+# If not provided, `api_key` is appended to the URL as a query parameter (?api-key=...).
+# header = "x-api-key"
