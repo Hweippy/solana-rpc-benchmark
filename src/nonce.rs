@@ -21,8 +21,9 @@ pub struct NonceManager {
 
 impl NonceManager {
     pub fn new(rpc_url: &str, nonces_b58: &[String]) -> Result<Self> {
-        let client = Arc::new(RpcClient::new_with_commitment(
+        let client = Arc::new(RpcClient::new_with_timeout_and_commitment(
             rpc_url.to_string(),
+            Duration::from_secs(3),
             CommitmentConfig::confirmed(),
         ));
 

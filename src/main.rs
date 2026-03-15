@@ -48,7 +48,11 @@ async fn main() -> Result<()> {
     let payer_pubkey = payer.pubkey().to_string();
     info!("Loaded payer: {}", payer_pubkey);
 
-    let rpc_client = RpcClient::new_with_commitment(config.benchmark.rpc_url.clone(), CommitmentConfig::confirmed());
+    let rpc_client = RpcClient::new_with_timeout_and_commitment(
+        config.benchmark.rpc_url.clone(),
+        Duration::from_secs(30),
+        CommitmentConfig::confirmed(),
+    );
 
     // Jupiter integration
     let client = Client::new();
@@ -132,7 +136,7 @@ async fn main() -> Result<()> {
     );
 
     let mut nonce_manager = NonceManager::new(&config.benchmark.rpc_url, &config.nonces)?;
-    let sender_client = SenderClient::new();
+    let sender_client = SenderClient::new(Duration::from_secs(config.benchmark.send_timeout));
     let mut tracker = Tracker::new();
 
     // BENCHMARK LOOP

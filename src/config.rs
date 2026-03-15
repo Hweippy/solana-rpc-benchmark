@@ -12,10 +12,16 @@ pub struct BenchmarkConfig {
     pub tip: Option<u64>,
     #[serde(default = "default_jupiter_url")]
     pub jupiter_url: String,
+    #[serde(default = "default_send_timeout")]
+    pub send_timeout: u64,
 }
 
 fn default_jupiter_url() -> String {
     "https://lite-api.jup.ag/swap/v1".to_string()
+}
+
+fn default_send_timeout() -> u64 {
+    2
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -7,7 +7,7 @@ use reqwest::{
 };
 use serde_json::json;
 use solana_sdk::transaction::VersionedTransaction;
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 #[derive(Clone)]
 pub struct SenderClient {
@@ -15,8 +15,10 @@ pub struct SenderClient {
 }
 
 impl SenderClient {
-    pub fn new() -> Self {
-        Self { client: Client::new() }
+    pub fn new(send_timeout: Duration) -> Self {
+        Self {
+            client: Client::builder().timeout(send_timeout).build().unwrap(),
+        }
     }
 
     pub async fn send_transaction(&self, tx: &VersionedTransaction, config: &SenderConfig) -> Result<()> {
