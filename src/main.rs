@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
     // 1. Get Quote
     info!("Fetching Jupiter quote...");
     let quote_url = format!(
-        "{}/quote?outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&inputMint=So11111111111111111111111111111111111111112&amount=100000000",
+        "{}/quote?outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&inputMint=So11111111111111111111111111111111111111112&amount=1000000000",
         config.benchmark.jupiter_url.trim_end_matches('/')
     );
     let mut quote: Value = client.get(quote_url).send().await?.json().await?;
@@ -140,62 +140,72 @@ async fn main() -> Result<()> {
     let mut tracker = Tracker::new();
 
     // BENCHMARK LOOP
-    for i in 0..config.benchmark.tx_count {
-        info!("Starting round {}/{}...", i + 1, config.benchmark.tx_count);
-        let nonce_info = match nonce_manager.get_next_nonce().await {
-            Ok(n) => n,
-            Err(e) => {
-                error!("Failed to fetch nonce: {}", e);
-                continue;
+    tokio::select! {
+        _ = async {
+            for i in 0..config.benchmark.tx_count {
+                info!("Starting round {}/{}...", i + 1, config.benchmark.tx_count);
+                let nonce_info = match nonce_manager.get_next_nonce().await {
+                    Ok(n) => n,
+                    Err(e) => {
+                        error!("Failed to fetch nonce: {}", e);
+                        continue;
+                    }
+                };
+
+                let mut round_signatures = Vec::new();
+                let mut shuffled_senders = config.senders.clone();
+                shuffled_senders.shuffle(&mut rand::thread_rng());
+
+                for sender in &shuffled_senders {
+                    let params = builder::BuildParams {
+                        cu_price: config.benchmark.cu_price,
+                        tip: config.benchmark.tip,
+                        jup_ixs: &jupiter_ixs,
+                        cu_limit: compute_unit_limit,
+                        lookup_tables: lookup_tables.clone(),
+                    };
+
+                    match build_transaction(&payer, &nonce_info, sender, params) {
+                        Ok(tx) => {
+                            let sig = tx.signatures[0];
+                            tracker.record_signature(sig, sender.name.clone());
+                            round_signatures.push((sig, sender.clone(), tx));
+                        }
+                        Err(e) => {
+                            error!("Failed to build tx for sender {}: {}", sender.name, e);
+                        }
+                    }
+                }
+
+                let mut futures = Vec::new();
+                for (_sig, sender_config, tx) in round_signatures {
+                    let client = sender_client.clone();
+
+                    futures.push(tokio::spawn(async move {
+                        if let Err(e) = client.send_transaction(&tx, &sender_config).await {
+                            error!("Failed to send tx for {}: {}", sender_config.name, e);
+                        }
+                    }));
+                }
+
+                for f in futures {
+                    let _ = f.await;
+                }
+
+                if i < config.benchmark.tx_count - 1 {
+                    tokio::time::sleep(Duration::from_millis(config.benchmark.delay_ms)).await;
+                }
             }
-        };
-
-        let mut round_signatures = Vec::new();
-        let mut shuffled_senders = config.senders.clone();
-        shuffled_senders.shuffle(&mut rand::thread_rng());
-
-        for sender in &shuffled_senders {
-            let params = builder::BuildParams {
-                cu_price: config.benchmark.cu_price,
-                tip: config.benchmark.tip,
-                jup_ixs: &jupiter_ixs,
-                cu_limit: compute_unit_limit,
-                lookup_tables: lookup_tables.clone(),
-            };
-
-            match build_transaction(&payer, &nonce_info, sender, params) {
-                Ok(tx) => {
-                    let sig = tx.signatures[0];
-                    tracker.record_signature(sig, sender.name.clone());
-                    round_signatures.push((sig, sender.clone(), tx));
-                }
-                Err(e) => {
-                    error!("Failed to build tx for sender {}: {}", sender.name, e);
-                }
-            }
+            Ok::<(), anyhow::Error>(())
+        } => {
+            info!("Finished sending all trades.");
         }
-
-        let mut futures = Vec::new();
-        for (_sig, sender_config, tx) in round_signatures {
-            let client = sender_client.clone();
-
-            futures.push(tokio::spawn(async move {
-                if let Err(e) = client.send_transaction(&tx, &sender_config).await {
-                    error!("Failed to send tx for {}: {}", sender_config.name, e);
-                }
-            }));
-        }
-
-        for f in futures {
-            let _ = f.await;
-        }
-
-        if i < config.benchmark.tx_count - 1 {
-            tokio::time::sleep(Duration::from_millis(config.benchmark.delay_ms)).await;
+        _ = tokio::signal::ctrl_c() => {
+            info!("Interrupted! Printing current benchmark info...");
         }
     }
 
-    info!("Finished sending all trades. Waiting 5 seconds for final transactions to process...");
+    info!("Waiting 5 seconds for final transactions to process...");
     tokio::time::sleep(Duration::from_secs(5)).await;
 
     info!("Fetching signature statuses to determine winners...");
@@ -227,7 +237,8 @@ async fn main() -> Result<()> {
 
     println!("\n================ BENCHMARK SUMMARY ================");
     let total_landed: usize = landed_count_by_sender.values().sum();
-    println!("Total Transactions Sent: {}", config.benchmark.tx_count);
+    let total_sent = tracker.pending_signatures.len();
+    println!("Total Transactions Sent: {}", total_sent);
     println!("Total Landed:            {}", total_landed);
     println!("Delay:                   {} ms", config.benchmark.delay_ms);
     println!("CU Price:                {} micro-lamports", config.benchmark.cu_price);
@@ -244,8 +255,8 @@ async fn main() -> Result<()> {
     let cost_per_landed_sol = (priority_fee_lamports + base_fee_lamports) / 1_000_000_000.0;
 
     for (name, count) in results {
-        let pct = if config.benchmark.tx_count > 0 {
-            (count as f64 / config.benchmark.tx_count as f64) * 100.0
+        let pct = if total_sent > 0 {
+            (count as f64 / total_sent as f64) * 100.0
         } else {
             0.0
         };
